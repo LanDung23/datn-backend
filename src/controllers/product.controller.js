@@ -1,84 +1,57 @@
 const ProductService = require('../services/product.service');
 
 class ProductController {
-    static async findAll(options = {}) {
-        const {
-            offset,
-            limit,
-            search,
-            categories,
-            types,
-            priceMin,
-            priceMax,
-            featured,
-        } = options;
+    async findAll(req, res) {
+        try {
+            const {
+                page,
+                pageSize,
+                search,
+                categories,
+                types,
+                priceMin,
+                priceMax
+            } = req.query;
 
-        const whereClause = {};
+            const filterOptions = {
+                search: search || null,
+                categories: categories ? categories.split(',') : [],
+                types: types ? types.split(',') : [],
+                priceMin: priceMin ? parseFloat(priceMin) : 0,
+                priceMax: priceMax ? parseFloat(priceMax) : 10000000,
+            };
 
-        // 🔍 SEARCH (Postgres dùng iLike)
-        if (search) {
-            whereClause[Op.or] = [
-                { name: { [Op.iLike]: `%${search}%` } },
-                { '$category.name$': { [Op.iLike]: `%${search}%` } },
-            ];
+            let result;
+            if (!page || !pageSize) {
+                result = await ProductService.findAll(filterOptions);
+                return res.status(200).json({
+                    success: true,
+                    message: 'Lấy tất cả sản phẩm thành công',
+                    data: result.rows,
+                    total: result.count
+                });
+            }
+
+            const offset = (parseInt(page) - 1) * parseInt(pageSize);
+            result = await ProductService.findAll({ ...filterOptions, offset, limit: parseInt(pageSize) });
+
+            res.status(200).json({
+                success: true,
+                message: 'Lấy danh sách sản phẩm thành công',
+                data: result.rows,
+                total: result.count,
+                page: parseInt(page),
+                pageSize: parseInt(pageSize),
+            });
+
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({
+                success: false,
+                message: 'Đã xảy ra lỗi khi lấy danh sách sản phẩm',
+                error: error.message,
+            });
         }
-
-        if (types && types.length > 0) {
-            whereClause.type = { [Op.in]: types };
-        }
-
-        if (priceMin !== undefined && priceMax !== undefined) {
-            whereClause.price = { [Op.between]: [priceMin, priceMax] };
-        }
-
-        if (featured !== undefined) {
-            whereClause.is_featured = featured === 'true';
-        }
-
-        const includeClause = [
-            {
-                model: Category,
-                as: 'category',
-                attributes: ['name'],
-                required: false, // ❗ QUAN TRỌNG
-                where:
-                    categories && categories.length > 0
-                        ? { name: { [Op.in]: categories } }
-                        : undefined,
-            },
-            {
-                model: Discount,
-                as: 'discount',
-                attributes: ['name', 'percentage'],
-            },
-        ];
-
-        const queryOptions = {
-            where: whereClause,
-            include: includeClause,
-            order: [['createdAt', 'DESC']],
-        };
-
-        if (offset !== undefined && limit !== undefined) {
-            queryOptions.offset = offset;
-            queryOptions.limit = limit;
-        }
-
-        const result = await Product.findAndCountAll(queryOptions);
-
-        const rows = result.rows.map((p) => {
-            const product = p.toJSON();
-            product.originalPrice = product.price;
-            product.finalPrice = product.discount
-                ? Math.round(product.price * (1 - product.discount.percentage / 100))
-                : product.price;
-            return product;
-        });
-
-        return {
-            count: result.count,
-            rows,
-        };
     }
     async findBySlug(req, res) {
         try {

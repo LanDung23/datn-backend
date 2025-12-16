@@ -6,14 +6,24 @@ const { uploadToCloudinary } = require('../utils/multer');
 
 class ProductService {
     static async findAll(options = {}) {
-        const { offset, limit, search, categories, types, priceMin, priceMax, featured } = options;
+        const {
+            offset,
+            limit,
+            search,
+            categories,
+            types,
+            priceMin,
+            priceMax,
+            featured,
+        } = options;
 
         const whereClause = {};
 
+        // 🔍 SEARCH (Postgres dùng iLike)
         if (search) {
             whereClause[Op.or] = [
-                { name: { [Op.like]: `%${search}%` } },
-                { '$category.name$': { [Op.like]: `%${search}%` } }
+                { name: { [Op.iLike]: `%${search}%` } },
+                { '$category.name$': { [Op.iLike]: `%${search}%` } },
             ];
         }
 
@@ -34,19 +44,23 @@ class ProductService {
                 model: Category,
                 as: 'category',
                 attributes: ['name'],
-                where: categories && categories.length > 0 ? { name: { [Op.in]: categories } } : undefined
+                required: false, // ❗ QUAN TRỌNG
+                where:
+                    categories && categories.length > 0
+                        ? { name: { [Op.in]: categories } }
+                        : undefined,
             },
             {
                 model: Discount,
                 as: 'discount',
-                attributes: ['name', 'percentage']
-            }
+                attributes: ['name', 'percentage'],
+            },
         ];
 
         const queryOptions = {
             where: whereClause,
             include: includeClause,
-            order: [['createdAt', 'ASC']],
+            order: [['createdAt', 'DESC']],
         };
 
         if (offset !== undefined && limit !== undefined) {
@@ -56,18 +70,19 @@ class ProductService {
 
         const result = await Product.findAndCountAll(queryOptions);
 
-        const rows = result.rows.map(p => {
+        const rows = result.rows.map((p) => {
             const product = p.toJSON();
             product.originalPrice = product.price;
-            if (product.discount) {
-                product.finalPrice = Math.round(product.price * (1 - product.discount.percentage / 100));
-            } else {
-                product.finalPrice = product.price;
-            }
+            product.finalPrice = product.discount
+                ? Math.round(product.price * (1 - product.discount.percentage / 100))
+                : product.price;
             return product;
         });
 
-        return { count: result.count, rows };
+        return {
+            count: result.count,
+            rows,
+        };
     }
 
     static async findBySlug(slug) {
