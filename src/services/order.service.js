@@ -114,8 +114,8 @@ class OrderService {
                     brand_name: 'My Shop',
                     landing_page: 'LOGIN',
                     user_action: 'PAY_NOW',
-                    return_url: `https://web-phu-tung-motor-frontend.vercel.app/paypal-success?orderId=${order.id}`,
-                    cancel_url: `https://web-phu-tung-motor-frontend.vercel.app/payment-fail?orderId=${order.id}`,
+                    return_url: `https://datn-frontend-two.vercel.app/paypal-success?orderId=${order.id}`,
+                    cancel_url: `https://datn-frontend-two.vercel.app/payment-fail?orderId=${order.id}`,
                 },
             });
 
