@@ -10,7 +10,7 @@ class ProductService {
             offset,
             limit,
             search,
-            categories,
+            categories, // Mong đợi mảng: ['Lốp xe', 'Bình điện']
             types,
             priceMin,
             priceMax,
@@ -19,7 +19,7 @@ class ProductService {
 
         const whereClause = {};
 
-        // 🔍 SEARCH (Postgres dùng iLike)
+        // 1. Lọc theo Search (Tên SP hoặc tên Danh mục)
         if (search) {
             whereClause[Op.or] = [
                 { name: { [Op.iLike]: `%${search}%` } },
@@ -27,40 +27,46 @@ class ProductService {
             ];
         }
 
+        // 2. Lọc theo Danh mục (Dùng path liên kết)
+        if (categories && categories.length > 0) {
+            whereClause['$category.name$'] = { [Op.in]: categories };
+        }
+
+        // 3. Lọc theo Loại (Type)
         if (types && types.length > 0) {
             whereClause.type = { [Op.in]: types };
         }
 
+        // 4. Lọc theo giá
         if (priceMin !== undefined && priceMax !== undefined) {
             whereClause.price = { [Op.between]: [priceMin, priceMax] };
         }
 
+        // 5. Sản phẩm nổi bật
         if (featured !== undefined) {
-            whereClause.is_featured = featured === 'true';
+            whereClause.is_featured = featured === 'true' || featured === true;
         }
-
-        const includeClause = [
-            {
-                model: Category,
-                as: 'category',
-                attributes: ['name'],
-                required: false, // ❗ QUAN TRỌNG
-                where:
-                    categories && categories.length > 0
-                        ? { name: { [Op.in]: categories } }
-                        : undefined,
-            },
-            {
-                model: Discount,
-                as: 'discount',
-                attributes: ['name', 'percentage'],
-            },
-        ];
 
         const queryOptions = {
             where: whereClause,
-            include: includeClause,
+            include: [
+                {
+                    model: Category,
+                    as: 'category',
+                    attributes: ['name'],
+                    // Bắt buộc Join (Inner Join) nếu đang lọc category hoặc search
+                    required: !!(categories?.length > 0 || search),
+                },
+                {
+                    model: Discount,
+                    as: 'discount',
+                    attributes: ['name', 'percentage'],
+                    required: false,
+                },
+            ],
             order: [['createdAt', 'DESC']],
+            distinct: true,  // Tránh đếm lặp sản phẩm khi Join bảng
+            subQuery: false, // Tránh lỗi SQL khi dùng Limit/Offset với bảng Join
         };
 
         if (offset !== undefined && limit !== undefined) {
@@ -70,6 +76,7 @@ class ProductService {
 
         const result = await Product.findAndCountAll(queryOptions);
 
+        // Map dữ liệu để tính toán giá khuyến mãi
         const rows = result.rows.map((p) => {
             const product = p.toJSON();
             product.originalPrice = product.price;
@@ -83,6 +90,27 @@ class ProductService {
             count: result.count,
             rows,
         };
+    }
+
+    // Các hàm findBySlug, create, update, delete giữ nguyên logic của bạn 
+    // vì chúng đã khá ổn định.
+    static async findBySlug(slug) {
+        const product = await Product.findOne({
+            where: { slug },
+            include: [
+                { model: Category, as: 'category', attributes: ['name'] },
+                { model: Discount, as: 'discount', attributes: ['name', 'percentage'] }
+            ]
+        });
+
+        if (!product) return null;
+
+        const p = product.toJSON();
+        p.originalPrice = p.price;
+        p.finalPrice = p.discount
+            ? Math.round(p.price * (1 - p.discount.percentage / 100))
+            : p.price;
+        return p;
     }
 
     static async findBySlug(slug) {

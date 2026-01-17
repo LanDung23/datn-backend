@@ -15,10 +15,12 @@ class ProductController {
 
             const filterOptions = {
                 search: search || null,
-                categories: categories ? categories.split(',') : [],
-                types: types ? types.split(',') : [],
+                // Tránh lỗi split trên undefined
+                categories: categories ? categories.split(',').filter(c => c !== '') : [],
+                types: types ? types.split(',').filter(t => t !== '') : [],
                 priceMin: priceMin ? parseFloat(priceMin) : 0,
                 priceMax: priceMax ? parseFloat(priceMax) : 10000000,
+                featured: req.query.featured
             };
 
             let result;

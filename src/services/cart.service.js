@@ -1,8 +1,8 @@
-const { Cart, CartItem, Product, Discount } = require('../models');
+const { Cart, CartItem, Product, Discount, sequelize } = require('../models');
 
 class CartService {
     static async addToCart(userId, productId, quantity) {
-        const t = await Cart.sequelize.transaction();
+        const t = await sequelize.transaction();
         try {
             let cart = await Cart.findOne({ where: { userId }, transaction: t });
             if (!cart) {
@@ -14,20 +14,18 @@ class CartService {
                 transaction: t
             });
 
-            if (!product) throw new Error('Product not found');
+            if (!product) throw new Error('Sản phẩm không tồn tại');
 
+            // Tính toán giá cuối cùng (Final Price) dựa trên Discount
             let basePrice = parseFloat(product.price);
             let discountPercent = 0;
-
             const now = new Date();
-            if (
-                product.discount &&
-                new Date(product.discount.start_date) <= now &&
-                now <= new Date(product.discount.end_date)
-            ) {
+            
+            if (product.discount && 
+                new Date(product.discount.start_date) <= now && 
+                now <= new Date(product.discount.end_date)) {
                 discountPercent = parseFloat(product.discount.percentage);
             }
-
             let finalPrice = basePrice * (1 - discountPercent / 100);
 
             const existingItem = await CartItem.findOne({
@@ -36,85 +34,66 @@ class CartService {
             });
 
             if (existingItem) {
-                existingItem.quantity += quantity;
+                existingItem.quantity += parseInt(quantity);
                 await existingItem.save({ transaction: t });
             } else {
-                await CartItem.create(
-                    {
-                        cartId: cart.id,
-                        productId,
-                        quantity,
-                        price: finalPrice.toFixed(2)
-                    },
-                    { transaction: t }
-                );
+                await CartItem.create({
+                    cartId: cart.id,
+                    productId,
+                    quantity: parseInt(quantity),
+                    price: finalPrice.toFixed(2)
+                }, { transaction: t });
             }
 
             await t.commit();
-            return {
-                cartId: cart.id,
-                productId,
-                quantity,
-                finalPrice: finalPrice.toFixed(2)
-            };
+            return { cartId: cart.id, productId, quantity };
         } catch (err) {
             await t.rollback();
-            console.error('Error in addToCart:', err);
             throw err;
         }
     }
 
     static async getCartByUserId(userId) {
-        try {
-            const cart = await Cart.findOne({
-                where: { userId },
-                include: [
-                    {
-                        model: CartItem,
-                        as: 'items',
-                        include: [
-                            {
-                                model: Product,
-                                as: 'product',
-                                include: ['category', 'discount']
-                            }
-                        ]
-                    }
-                ]
-            });
+        // Tìm giỏ hàng và kèm theo tất cả thông tin Product, Discount để tính giá
+        const cart = await Cart.findOne({
+            where: { userId },
+            include: [{
+                model: CartItem,
+                as: 'items',
+                include: [{
+                    model: Product,
+                    as: 'product',
+                    include: ['category', 'discount']
+                }]
+            }],
+            order: [[ { model: CartItem, as: 'items' }, 'createdAt', 'ASC' ]] // Quan trọng: Giữ thứ tự dòng không bị nhảy
+        });
 
-            if (!cart) return [];
-
-            return cart.items;
-        } catch (err) {
-            console.error('Error in getCart:', err);
-            throw err;
-        }
+        return cart ? cart.items : [];
     }
 
     static async updateQuantity(cartItemId, quantity) {
         const item = await CartItem.findByPk(cartItemId);
-        if (!item) throw new Error('Cart item not found');
+        if (!item) throw new Error('Không tìm thấy dòng này trong giỏ hàng');
 
-        item.quantity = quantity;
+        if (quantity < 1) throw new Error('Số lượng không được nhỏ hơn 1');
+        
+        item.quantity = parseInt(quantity);
         await item.save();
-
         return item;
     }
 
     static async removeItem(cartItemId) {
         const item = await CartItem.findByPk(cartItemId);
-        if (!item) throw new Error('Cart item not found');
+        if (!item) throw new Error('Sản phẩm không còn trong giỏ');
         await item.destroy();
         return { success: true };
     }
 
     static async clearCart(userId) {
-        if (!userId) throw new Error('userId is required');
         const cart = await Cart.findOne({ where: { userId } });
         if (!cart) return 0;
-        const deleted = await CartItem.destroy({ where: { cartId: cart.id } });
-        return deleted;
+        return await CartItem.destroy({ where: { cartId: cart.id } });
     }
 }
 

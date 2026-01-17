@@ -1,92 +1,59 @@
 const CartService = require('../services/cart.service');
-const Cart = require('../models/cart.model');
-const CartItem = require('../models/cartItem.model');
 
 class CartController {
     async addToCart(req, res) {
         try {
             const { userId, productId, quantity } = req.body;
-            console.log(req.body);
-
             if (!userId || !productId || !quantity) {
-                return res.status(400).json({ message: 'Missing required fields' });
+                return res.status(400).json({ success: false, message: 'Thiếu thông tin đầu vào' });
             }
-
             const data = await CartService.addToCart(userId, productId, quantity);
-            res.status(200).json({ message: 'Product added to cart', data });
+            res.status(200).json({ success: true, message: 'Đã thêm vào giỏ hàng', data });
         } catch (err) {
-            console.error('Error in addToCart:', err);
-            res.status(500).json({ message: 'Internal Server Error' });
+            res.status(500).json({ success: false, message: err.message });
         }
     }
 
     async getCart(req, res) {
         try {
-            const userId = req.params.userId;
-
-            if (!userId) {
-                return res.status(400).json({ message: 'User ID is required' });
-            }
-
+            const { userId } = req.params;
             const data = await CartService.getCartByUserId(userId);
-            res.status(200).json({
-                message: 'Lấy giỏ hàng thành công',
-                data
-            });
+            res.status(200).json({ success: true, data });
         } catch (err) {
-            console.error('Error in getCart:', err);
-            res.status(500).json({ message: 'Internal Server Error' });
+            res.status(500).json({ success: false, message: 'Lỗi tải giỏ hàng' });
         }
     }
 
     async updateQuantity(req, res) {
         try {
             const { cartItemId, quantity } = req.body;
-
-            if (!cartItemId || quantity == null) {
-                return res.status(400).json({ message: 'Missing cartItemId or quantity' });
+            if (!cartItemId || quantity === undefined) {
+                return res.status(400).json({ success: false, message: 'Thiếu ID hoặc số lượng' });
             }
-
-            await CartService.updateQuantity(cartItemId, quantity);
-            res.status(200).json({ message: 'Quantity updated' });
+            const data = await CartService.updateQuantity(cartItemId, quantity);
+            res.status(200).json({ success: true, message: 'Cập nhật thành công', data });
         } catch (err) {
-            console.error('Error in updateQuantity:', err);
-            res.status(500).json({ message: 'Internal Server Error' });
+            res.status(500).json({ success: false, message: err.message });
         }
     }
 
     async removeItem(req, res) {
         try {
             const { cartItemId } = req.body;
-
-            if (!cartItemId) {
-                return res.status(400).json({ message: 'Missing cartItemId' });
-            }
-
             await CartService.removeItem(cartItemId);
-            res.status(200).json({ message: 'Item removed from cart' });
+            res.status(200).json({ success: true, message: 'Đã xóa sản phẩm' });
         } catch (err) {
-            console.error('Error in removeItem:', err);
-            res.status(500).json({ message: 'Internal Server Error' });
+            res.status(500).json({ success: false, message: 'Lỗi khi xóa sản phẩm' });
         }
     }
 
     async clearCart(req, res) {
         try {
-            const userId = req.params.userId;
-
-            if (!userId) {
-                return res.status(400).json({ message: 'User ID is required' });
-            }
-
-            const cart = await Cart.findOne({ where: { userId } });
-            if (!cart) return res.status(404).json({ message: 'Không tìm thấy giỏ hàng' });
-
-            await CartItem.destroy({ where: { cartId: cart.id } });
-            res.status(200).json({ message: 'Đã xóa sản phẩm trong giỏ hàng' });
-        } catch (error) {
-            console.error('Error clearing cart:', error);
-            res.status(500).json({ message: 'Lỗi khi xóa giỏ hàng', error: error.message });
+            const { userId } = req.params;
+            await CartService.clearCart(userId);
+            res.status(200).json({ success: true, message: 'Giỏ hàng đã trống' });
+        } catch (err) {
+            res.status(500).json({ success: false, message: 'Lỗi khi làm sạch giỏ hàng' });
         }
     }
 }
